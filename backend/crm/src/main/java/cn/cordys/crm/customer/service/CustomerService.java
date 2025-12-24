@@ -8,6 +8,7 @@ import cn.cordys.aspectj.dto.LogContextInfo;
 import cn.cordys.aspectj.dto.LogDTO;
 import cn.cordys.common.constants.BusinessModuleField;
 import cn.cordys.common.constants.FormKey;
+import cn.cordys.common.constants.InternalUser;
 import cn.cordys.common.constants.PermissionConstants;
 import cn.cordys.common.domain.BaseModuleFieldValue;
 import cn.cordys.common.domain.BaseResourceSubField;
@@ -295,6 +296,11 @@ public class CustomerService {
         }
         boolean hasPermission = dataScopeService.hasDataPermission(userId, orgId, getResponse.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_READ);
         if (!hasPermission) {
+            // 创建人也可以访问
+            if (Strings.CS.equals(userId, getResponse.getCreateUser())) {
+                return getResponse;
+            }
+            // 协作人也可以访问
             List<CustomerCollaboration> collaborations = customerCollaborationService.selectByCustomerIdAndUserId(getResponse.getId(), userId);
             if (CollectionUtils.isEmpty(collaborations)) {
                 throw new GenericException(CrmHttpResultCode.FORBIDDEN);
@@ -310,7 +316,6 @@ public class CustomerService {
      * ⚠️反射调用; 勿修改入参, 返回, 方法名!
      *
      * @param id 客户ID
-     *
      * @return 客户详情
      */
     public CustomerGetResponse get(String id) {
@@ -421,7 +426,11 @@ public class CustomerService {
         if (!Strings.CS.equals(originCustomer.getOwner(), request.getOwner())) {
             poolCustomerService.validateCapacity(1, request.getOwner(), orgId);
         }
-        dataScopeService.checkDataPermission(userId, orgId, originCustomer.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_UPDATE);
+
+        // 非创建人则需要检查权限
+        if (!Strings.CS.equals(userId, originCustomer.getCreateUser())) {
+            dataScopeService.checkDataPermission(userId, orgId, originCustomer.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_UPDATE);
+        }
 
         Customer customer = BeanUtils.copyBean(new Customer(), request);
         customer.setUpdateTime(System.currentTimeMillis());
@@ -472,7 +481,10 @@ public class CustomerService {
     @OperationLog(module = LogModule.CUSTOMER_INDEX, type = LogType.DELETE, resourceId = "{#id}")
     public void delete(String id, String userId, String orgId) {
         Customer originCustomer = customerMapper.selectByPrimaryKey(id);
-        dataScopeService.checkDataPermission(userId, orgId, originCustomer.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_DELETE);
+        // 非创建人则需要检查权限
+        if (!Strings.CS.equals(userId, originCustomer.getCreateUser())) {
+            dataScopeService.checkDataPermission(userId, orgId, originCustomer.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_DELETE);
+        }
         checkResourceRef(List.of(id));
         deleteCustomerResource(List.of(id));
 
@@ -696,7 +708,6 @@ public class CustomerService {
      *
      * @param file       导入文件
      * @param currentOrg 当前组织
-     *
      * @return 导入检查信息
      */
     public ImportResponse importPreCheck(MultipartFile file, String currentOrg) {
@@ -712,7 +723,6 @@ public class CustomerService {
      * @param file        导入文件
      * @param currentOrg  当前组织
      * @param currentUser 当前用户
-     *
      * @return 导入返回信息
      */
     public ImportResponse realImport(MultipartFile file, String currentOrg, String currentUser) {
@@ -747,7 +757,6 @@ public class CustomerService {
      *
      * @param file       文件
      * @param currentOrg 当前组织
-     *
      * @return 检查信息
      */
     private ImportResponse checkImportExcel(MultipartFile file, String currentOrg) {
@@ -919,7 +928,6 @@ public class CustomerService {
      * @param mergeRequest 合并请求参数
      * @param currentUser  当前用户
      * @param currentOrgId 当前组织ID
-     *
      * @return 日志列表
      */
     private List<LogDTO> getMergeRelateLogs(CustomerMergeRequest mergeRequest, String currentUser, String currentOrgId) {

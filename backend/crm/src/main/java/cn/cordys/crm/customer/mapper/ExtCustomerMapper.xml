@@ -84,16 +84,12 @@
 
         where c.organization_id = #{orgId}
 
-        <if test="request.poolId == null and !request.transition">
-            and c.in_shared_pool is false
-        </if>
-
         <if test="request.poolId != null and !request.transition">
             and c.in_shared_pool is true and c.pool_id = #{request.poolId}
         </if>
 
         <if test="dataPermission != null and dataPermission.self">
-            and c.owner = #{userId}
+            and c.owner = #{userId} or c.create_user = #{userId})
         </if>
 
         <if test="request.keyword != null and request.keyword != ''">
