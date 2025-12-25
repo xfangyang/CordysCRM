@@ -40,6 +40,7 @@ import cn.cordys.crm.system.service.ModuleFormCacheService;
 import cn.cordys.crm.system.service.UserExtendService;
 import cn.cordys.mybatis.BaseMapper;
 import cn.cordys.mybatis.lambda.LambdaQueryWrapper;
+import cn.cordys.common.redis.RedisLockService;
 import jakarta.annotation.Resource;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -90,6 +91,8 @@ public class PoolCustomerService {
     private CustomerFieldService customerFieldService;
     @Resource
     private ExtCustomerOwnerMapper extCustomerOwnerMapper;
+    @Resource
+    private RedisLockService redisLockService;
 
     /**
      * 获取当前用户公海选项
@@ -190,17 +193,32 @@ public class PoolCustomerService {
      * @param currentOrgId 当前组织ID
      */
     public void pick(PoolCustomerPickRequest request, String currentUser, String currentOrgId) {
-        CustomerPool pool = poolMapper.selectByPrimaryKey(request.getPoolId());
-        validateCapacity(1, currentUser, currentOrgId);
-        LambdaQueryWrapper<CustomerPoolPickRule> pickRuleWrapper = new LambdaQueryWrapper<>();
-        pickRuleWrapper.eq(CustomerPoolPickRule::getPoolId, request.getPoolId());
-        List<CustomerPoolPickRule> customerPoolPickRules = pickRuleMapper.selectListByLambda(pickRuleWrapper);
-        CustomerPoolPickRule pickRule = customerPoolPickRules.getFirst();
-        boolean poolAdmin = userExtendService.isPoolAdmin(JSON.parseArray(pool.getOwnerId(), String.class), currentUser, currentOrgId);
-        if (!poolAdmin) {
-            validateDailyPickNum(1, currentUser, pickRule);
+        // redis 并发排他锁
+        String lockKey = "customer:pick:" + request.getCustomerId();
+        String lockValue = currentUser + ":" + System.currentTimeMillis();
+
+        // 尝试获取锁，等待最多 5 秒
+        boolean locked = redisLockService.tryLockWithWait(lockKey, lockValue, 30, 5000);
+        if (!locked) {
+            throw new GenericException(Translator.get("customer.pick.concurrent"));
         }
-        ownCustomer(request.getCustomerId(), currentUser, pickRule, currentUser, LogType.PICK, currentOrgId, poolAdmin);
+
+        try {
+            CustomerPool pool = poolMapper.selectByPrimaryKey(request.getPoolId());
+            validateCapacity(1, currentUser, currentOrgId);
+            LambdaQueryWrapper<CustomerPoolPickRule> pickRuleWrapper = new LambdaQueryWrapper<>();
+            pickRuleWrapper.eq(CustomerPoolPickRule::getPoolId, request.getPoolId());
+            List<CustomerPoolPickRule> customerPoolPickRules = pickRuleMapper.selectListByLambda(pickRuleWrapper);
+            CustomerPoolPickRule pickRule = customerPoolPickRules.getFirst();
+            boolean poolAdmin = userExtendService.isPoolAdmin(JSON.parseArray(pool.getOwnerId(), String.class), currentUser, currentOrgId);
+            if (!poolAdmin) {
+                validateDailyPickNum(1, currentUser, pickRule);
+            }
+            ownCustomer(request.getCustomerId(), currentUser, pickRule, currentUser, LogType.PICK, currentOrgId, poolAdmin);
+        } finally {
+            // 释放锁
+            redisLockService.unlock(lockKey, lockValue);
+        }
     }
 
     /**
@@ -248,7 +266,25 @@ public class PoolCustomerService {
         if (!poolAdmin) {
             validateDailyPickNum(request.getBatchIds().size(), currentUser, pickRule);
         }
-        request.getBatchIds().forEach(id -> ownCustomer(id, currentUser, pickRule, currentUser, LogType.PICK, currentOrgId, poolAdmin));
+
+        // 批量领取时，为每个客户分别加锁
+        request.getBatchIds().forEach(id -> {
+            String lockKey = "customer:pick:" + id;
+            String lockValue = currentUser + ":" + System.currentTimeMillis();
+
+            // 尝试获取锁，等待最多 3 秒
+            boolean locked = redisLockService.tryLockWithWait(lockKey, lockValue, 30, 3000);
+            if (!locked) {
+                throw new GenericException(Translator.getWithArgs("customer.pick.concurrent", id));
+            }
+
+            try {
+                ownCustomer(id, currentUser, pickRule, currentUser, LogType.PICK, currentOrgId, poolAdmin);
+            } finally {
+                // 释放锁
+                redisLockService.unlock(lockKey, lockValue);
+            }
+        });
     }
 
     /**
@@ -357,6 +393,10 @@ public class PoolCustomerService {
         Customer customer = customerMapper.selectByPrimaryKey(customerId);
         if (customer == null) {
             throw new IllegalArgumentException(Translator.get("customer.not.exist"));
+        }
+        // 手慢了，客户已被领走了
+        if (StringUtils.isNotBlank(customer.getOwner())) {
+            throw new GenericException(Translator.get("customer.already.picked"));
         }
         if (!isPoolAdmin && pickRule != null && pickRule.getLimitNew()) {
             LocalDateTime joinPoolTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(customer.getUpdateTime()), ZoneId.systemDefault());

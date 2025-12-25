@@ -294,12 +294,15 @@ public class CustomerService {
         if (getResponse == null) {
             throw new GenericException(Translator.get("customer.not.exist"));
         }
-        String owner = getResponse.getOwner();
-        if (StringUtils.isBlank(owner)) { // 为空说明移入公海
+
+        // 如果是创建者
+        if (Strings.CS.equals(userId, getResponse.getCreateUser())) {
+            // 检查是否有查看权限
             dataScopeService.checkDataPermission(userId, orgId, getResponse.getCreateUser(), PermissionConstants.CUSTOMER_MANAGEMENT_READ);
-            owner = getResponse.getCreateUser();
+            return getResponse;
         }
-        boolean hasPermission = dataScopeService.hasDataPermission(userId, orgId, owner, PermissionConstants.CUSTOMER_MANAGEMENT_READ);
+
+        boolean hasPermission = dataScopeService.hasDataPermission(userId, orgId, getResponse.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_READ);
         if (!hasPermission) {
             // 协作人也可以访问
             List<CustomerCollaboration> collaborations = customerCollaborationService.selectByCustomerIdAndUserId(getResponse.getId(), userId);
