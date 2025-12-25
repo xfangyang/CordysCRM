@@ -281,4 +281,92 @@ public class DataScopeService {
         }
         return false;
     }
+
+    /**
+     * 检查数据权限（创建人优先）
+     * 逻辑：先检查操作权限 -> 再检查是否是创建人 -> 最后检查数据权限
+     *
+     * @param userId    当前用户ID
+     * @param orgId     组织ID
+     * @param owner     资源负责人
+     * @param creator   资源创建人
+     * @param permission 操作权限标识
+     * @return 是否有权限
+     */
+    public void checkDataPermissionWithCreatorPriority(String userId, String orgId, String owner, String creator, String permission) {
+        if (StringUtils.isBlank(owner)) {
+            throw new GenericException(Translator.get("data.permission"));
+        }
+
+        // 1. 检查是否有操作权限
+        boolean hasOperationPermission = hasOperationPermission(userId, orgId, permission);
+        if (!hasOperationPermission) {
+            throw new GenericException(CrmHttpResultCode.FORBIDDEN);
+        }
+
+        // 2. 如果是创建人，直接允许
+        if (Strings.CS.equals(userId, creator)) {
+            return;
+        }
+
+        // 3. 不是创建人，检查数据权限
+        if (!hasDataPermission(userId, orgId, owner, permission)) {
+            throw new GenericException(CrmHttpResultCode.FORBIDDEN);
+        }
+    }
+
+    /**
+     * 检查数据权限（创建人优先）- 批量操作
+     *
+     * @param userId     当前用户ID
+     * @param orgId      组织ID
+     * @param owners     资源负责人列表
+     * @param creators   资源创建人列表
+     * @param permission 操作权限标识
+     */
+    public void checkDataPermissionWithCreatorPriority(String userId, String orgId, List<String> owners, List<String> creators, String permission) {
+        if (CollectionUtils.isEmpty(owners) || CollectionUtils.isEmpty(creators)) {
+            throw new GenericException(Translator.get("data.permission"));
+        }
+
+        // 1. 检查是否有操作权限
+        boolean hasOperationPermission = hasOperationPermission(userId, orgId, permission);
+        if (!hasOperationPermission) {
+            throw new GenericException(CrmHttpResultCode.FORBIDDEN);
+        }
+
+        // 2. 检查每条记录的权限
+        for (int i = 0; i < owners.size(); i++) {
+            String owner = owners.get(i);
+            String creator = creators.get(i);
+
+            // 如果是创建人，跳过数据权限检查
+            if (Strings.CS.equals(userId, creator)) {
+                continue;
+            }
+
+            // 不是创建人，检查数据权限
+            if (!hasDataPermission(userId, orgId, owner, permission)) {
+                throw new GenericException(CrmHttpResultCode.FORBIDDEN);
+            }
+        }
+    }
+
+    /**
+     * 检查用户是否有操作权限
+     *
+     * @param userId     用户ID
+     * @param orgId      组织ID
+     * @param permission 权限标识
+     * @return 是否有权限
+     */
+    private boolean hasOperationPermission(String userId, String orgId, String permission) {
+        if (Strings.CS.equals(userId, InternalUser.ADMIN.getValue())) {
+            return true;
+        }
+
+        List<RolePermissionDTO> rolePermissions = permissionCache.getRolePermissions(userId, orgId);
+        return rolePermissions.stream()
+                .anyMatch(rolePermission -> rolePermission.getPermissions().contains(permission));
+    }
 }

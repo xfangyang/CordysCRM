@@ -36,26 +36,15 @@
         {{ item.tab }}
       </van-button>
     </div>
-    <div class="custom-filter-buttons">
-      <van-button
-        v-for="item of customFilterOptions"
-        :key="item.value"
-        round
-        size="small"
-        class="!min-w-max !whitespace-nowrap !border-none !px-[16px] !py-[4px] !text-[14px]"
-        :class="
-          activeCustomFilter === item.value
-            ? '!bg-[var(--primary-7)] !text-[var(--primary-8)]'
-            : '!bg-[var(--text-n9)] !text-[var(--text-n1)]'
-        "
-        @click="handleCustomFilterClick(item.value as string)"
-      >
-        {{ item.label }}
-      </van-button>
-      <div class="scroll-indicator">
-        <van-icon name="arrow" class="arrow-icon" />
-      </div>
-    </div>
+    <van-tabs
+      v-model:active="activeCustomFilter"
+      class="custom-filter-tabs"
+      background="var(--text-n10)"
+      line-width="20px"
+      @click-tab="handleCustomFilterTab"
+    >
+      <van-tab v-for="item of customFilterOptions" :key="item.value" :name="item.value" :title="item.label" />
+    </van-tabs>
     <CrmList
       ref="crmListRef"
       :keyword="keyword"
@@ -272,16 +261,15 @@
     });
   }
 
-  function handleCustomFilterClick(value: string) {
-    activeCustomFilter.value = value;
-    if (value === 'ALL') {
+  function handleCustomFilterTab({ name }: { name: string }) {
+    if (name === 'ALL') {
       // 点击'全部'按钮时，清空筛选器
       customFilters.value = [];
     } else {
       customFilters.value = [
         {
           name: '176658417185600000',
-          value: [value],
+          value: [name],
           multipleValue: false,
           operator: 'IN',
           type: 'SELECT',
@@ -304,32 +292,23 @@
     background-color: var(--text-n10);
     .half-px-border-bottom();
   }
-  .custom-filter-buttons {
-    @apply flex items-center overflow-x-auto;
-
-    position: relative;
-    margin-top: 1px;
-    padding: 8px 4px;
-    background-color: var(--text-n10);
-    gap: 8px;
-    .half-px-border-bottom();
-    &::-webkit-scrollbar {
-      display: none;
+  .custom-filter-tabs {
+    :deep(.van-tabs__wrap) {
+      .half-px-border-bottom();
     }
-  }
-  .scroll-indicator {
-    position: sticky;
-    right: 0;
-    z-index: 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding-left: 8px;
-    height: 100%;
-    background: linear-gradient(to left, var(--text-n10), transparent);
-  }
-  .arrow-icon {
-    font-size: 16px;
-    color: var(--text-n3);
+    :deep(.van-tabs__nav) {
+      padding-bottom: 4px;
+      background-color: var(--text-n10);
+    }
+    :deep(.van-tab) {
+      flex: 0 0 auto;
+      padding: 0 16px;
+      padding-bottom: 8px;
+      font-size: 14px;
+      line-height: 20px;
+    }
+    :deep(.van-tabs__line) {
+      background-color: var(--primary-8);
+    }
   }
 </style>

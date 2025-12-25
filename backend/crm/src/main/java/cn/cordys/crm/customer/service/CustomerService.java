@@ -294,12 +294,13 @@ public class CustomerService {
         if (getResponse == null) {
             throw new GenericException(Translator.get("customer.not.exist"));
         }
-        boolean hasPermission = dataScopeService.hasDataPermission(userId, orgId, getResponse.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_READ);
+        String owner = getResponse.getOwner();
+        if (StringUtils.isBlank(owner)) { // 为空说明移入公海
+            dataScopeService.checkDataPermission(userId, orgId, getResponse.getCreateUser(), PermissionConstants.CUSTOMER_MANAGEMENT_READ);
+            owner = getResponse.getCreateUser();
+        }
+        boolean hasPermission = dataScopeService.hasDataPermission(userId, orgId, owner, PermissionConstants.CUSTOMER_MANAGEMENT_READ);
         if (!hasPermission) {
-            // 创建人也可以访问
-            if (Strings.CS.equals(userId, getResponse.getCreateUser())) {
-                return getResponse;
-            }
             // 协作人也可以访问
             List<CustomerCollaboration> collaborations = customerCollaborationService.selectByCustomerIdAndUserId(getResponse.getId(), userId);
             if (CollectionUtils.isEmpty(collaborations)) {
@@ -427,10 +428,7 @@ public class CustomerService {
             poolCustomerService.validateCapacity(1, request.getOwner(), orgId);
         }
 
-        // 非创建人则需要检查权限
-        if (!Strings.CS.equals(userId, originCustomer.getCreateUser())) {
-            dataScopeService.checkDataPermission(userId, orgId, originCustomer.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_UPDATE);
-        }
+        dataScopeService.checkDataPermissionWithCreatorPriority(userId, orgId, originCustomer.getOwner(), originCustomer.getCreateUser(), PermissionConstants.CUSTOMER_MANAGEMENT_UPDATE);
 
         Customer customer = BeanUtils.copyBean(new Customer(), request);
         customer.setUpdateTime(System.currentTimeMillis());
@@ -481,10 +479,7 @@ public class CustomerService {
     @OperationLog(module = LogModule.CUSTOMER_INDEX, type = LogType.DELETE, resourceId = "{#id}")
     public void delete(String id, String userId, String orgId) {
         Customer originCustomer = customerMapper.selectByPrimaryKey(id);
-        // 非创建人则需要检查权限
-        if (!Strings.CS.equals(userId, originCustomer.getCreateUser())) {
-            dataScopeService.checkDataPermission(userId, orgId, originCustomer.getOwner(), PermissionConstants.CUSTOMER_MANAGEMENT_DELETE);
-        }
+        dataScopeService.checkDataPermissionWithCreatorPriority(userId, orgId, originCustomer.getOwner(), originCustomer.getCreateUser(), PermissionConstants.CUSTOMER_MANAGEMENT_DELETE);
         checkResourceRef(List.of(id));
         deleteCustomerResource(List.of(id));
 
@@ -499,10 +494,11 @@ public class CustomerService {
     public void batchTransfer(CustomerBatchTransferRequest request, String userId, String orgId) {
         List<Customer> originCustomers = customerMapper.selectByIds(request.getIds());
         List<String> owners = getOwners(originCustomers);
+        List<String> creators = originCustomers.stream().map(Customer::getCreateUser).toList();
         long processCount = originCustomers.stream().filter(customer -> !Strings.CS.equals(customer.getOwner(), request.getOwner())).count();
         poolCustomerService.validateCapacity((int) processCount, request.getOwner(), orgId);
 
-        dataScopeService.checkDataPermission(userId, orgId, owners, PermissionConstants.CUSTOMER_MANAGEMENT_UPDATE);
+        dataScopeService.checkDataPermissionWithCreatorPriority(userId, orgId, owners, creators, PermissionConstants.CUSTOMER_MANAGEMENT_UPDATE);
         // 添加责任人历史
         customerOwnerHistoryService.batchAdd(request, userId);
         extCustomerMapper.batchTransfer(request, userId);
@@ -540,7 +536,8 @@ public class CustomerService {
     public void batchDelete(List<String> ids, String userId, String orgId) {
         List<Customer> customers = customerMapper.selectByIds(ids);
         List<String> owners = getOwners(customers);
-        dataScopeService.checkDataPermission(userId, orgId, owners, PermissionConstants.CUSTOMER_MANAGEMENT_DELETE);
+        List<String> creators = customers.stream().map(Customer::getCreateUser).toList();
+        dataScopeService.checkDataPermissionWithCreatorPriority(userId, orgId, owners, creators, PermissionConstants.CUSTOMER_MANAGEMENT_DELETE);
 
         checkResourceRef(ids);
 
@@ -600,7 +597,8 @@ public class CustomerService {
     public BatchAffectResponse batchToPool(BatchPoolReasonRequest request, String currentUser, String orgId) {
         List<Customer> customers = customerMapper.selectByIds(request.getIds());
         List<String> owners = getOwners(customers);
-        dataScopeService.checkDataPermission(currentUser, orgId, owners, PermissionConstants.CUSTOMER_MANAGEMENT_RECYCLE);
+        List<String> creators = customers.stream().map(Customer::getCreateUser).toList();
+        dataScopeService.checkDataPermissionWithCreatorPriority(currentUser, orgId, owners, creators, PermissionConstants.CUSTOMER_MANAGEMENT_RECYCLE);
 
         List<String> ownerIds = getOwners(customers);
         Map<String, CustomerPool> ownersDefaultPoolMap = customerPoolService.getOwnersDefaultPoolMap(ownerIds, orgId);
