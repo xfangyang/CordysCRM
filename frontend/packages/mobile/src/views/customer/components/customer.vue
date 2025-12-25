@@ -36,6 +36,26 @@
         {{ item.tab }}
       </van-button>
     </div>
+    <div class="custom-filter-buttons">
+      <van-button
+        v-for="item of customFilterOptions"
+        :key="item.value"
+        round
+        size="small"
+        class="!min-w-max !whitespace-nowrap !border-none !px-[16px] !py-[4px] !text-[14px]"
+        :class="
+          activeCustomFilter === item.value
+            ? '!bg-[var(--primary-7)] !text-[var(--primary-8)]'
+            : '!bg-[var(--text-n9)] !text-[var(--text-n1)]'
+        "
+        @click="handleCustomFilterClick(item.value as string)"
+      >
+        {{ item.label }}
+      </van-button>
+      <div class="scroll-indicator">
+        <van-icon name="arrow" class="arrow-icon" />
+      </div>
+    </div>
     <CrmList
       ref="crmListRef"
       :keyword="keyword"
@@ -75,12 +95,16 @@
   import useHiddenTab from '@/hooks/useHiddenTab';
 
   import { CommonRouteEnum, CustomerRouteEnum } from '@/enums/routeEnum';
+  import type { FormCreateFieldOption } from '@cordys/web/src/components/business/crm-form-create/types';
 
   const { t } = useI18n();
   const router = useRouter();
 
   const crmListRef = ref<InstanceType<typeof CrmList>>();
+  const customFilterOptions = ref<FormCreateFieldOption[]>([]);
   const keyword = ref('');
+  const customFilters = ref<any[]>([]);
+  const activeCustomFilter = ref('ALL');
   const filterButtons = [
     {
       name: CustomerSearchTypeEnum.ALL,
@@ -100,15 +124,25 @@
     },
   ];
   const { tabList, activeFilter } = useHiddenTab(filterButtons, FormDesignKeyEnum.CUSTOMER);
-
   const listParams = computed(() => {
     return {
       viewId: activeFilter.value,
       keyword: keyword.value,
+      filters: customFilters.value,
     };
   });
 
-  const { transformFormData } = await useFormCreateTransform(FormDesignKeyEnum.CUSTOMER);
+  const { fieldList, transformFormData } = await useFormCreateTransform(FormDesignKeyEnum.CUSTOMER);
+
+  const customFilter = fieldList.value.find((item) => item.id === '176658417185600000');
+  if (customFilter) {
+    customFilterOptions.value = customFilter.options as FormCreateFieldOption[];
+    // 添加到第一个筛选项
+    customFilterOptions.value.unshift({
+      value: 'ALL',
+      label: '全部',
+    });
+  }
 
   const actions = [
     {
@@ -237,6 +271,28 @@
       },
     });
   }
+
+  function handleCustomFilterClick(value: string) {
+    activeCustomFilter.value = value;
+    if (value === 'ALL') {
+      // 点击'全部'按钮时，清空筛选器
+      customFilters.value = [];
+    } else {
+      customFilters.value = [
+        {
+          name: '176658417185600000',
+          value: [value],
+          multipleValue: false,
+          operator: 'IN',
+          type: 'SELECT',
+        },
+      ];
+    }
+    // 手动触发列表刷新
+    nextTick(() => {
+      crmListRef.value?.loadList(true);
+    });
+  }
 </script>
 
 <style lang="less" scoped>
@@ -247,5 +303,33 @@
     padding: 8px 4px;
     background-color: var(--text-n10);
     .half-px-border-bottom();
+  }
+  .custom-filter-buttons {
+    @apply flex items-center overflow-x-auto;
+
+    position: relative;
+    margin-top: 1px;
+    padding: 8px 4px;
+    background-color: var(--text-n10);
+    gap: 8px;
+    .half-px-border-bottom();
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+  .scroll-indicator {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-left: 8px;
+    height: 100%;
+    background: linear-gradient(to left, var(--text-n10), transparent);
+  }
+  .arrow-icon {
+    font-size: 16px;
+    color: var(--text-n3);
   }
 </style>

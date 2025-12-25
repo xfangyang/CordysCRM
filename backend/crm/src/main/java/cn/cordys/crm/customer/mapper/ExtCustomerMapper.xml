@@ -89,7 +89,7 @@
         </if>
 
         <if test="dataPermission != null and dataPermission.self">
-            and c.owner = #{userId} or c.create_user = #{userId})
+            and (c.owner = #{userId} or c.create_user = #{userId})
         </if>
 
         <if test="request.keyword != null and request.keyword != ''">
