@@ -83,8 +83,9 @@
   import useFormCreateTransform from '@/hooks/useFormCreateTransform';
   import useHiddenTab from '@/hooks/useHiddenTab';
 
-  import { CommonRouteEnum, CustomerRouteEnum } from '@/enums/routeEnum';
+  import { ClueRouteEnum, CommonRouteEnum, CustomerRouteEnum } from '@/enums/routeEnum';
   import type { FormCreateFieldOption } from '@cordys/web/src/components/business/crm-form-create/types';
+  import { ReasonTypeEnum } from '@lib/shared/enums/moduleEnum';
 
   const { t } = useI18n();
   const router = useRouter();
@@ -151,16 +152,17 @@
       },
     },
     {
-      key: 'transfer',
-      label: t('common.transfer'),
+      key: 'recycle',
+      label: t('customer.moveToOpenSea'),
       icon: 'iconicon_jump',
-      permission: ['CUSTOMER_MANAGEMENT:TRANSFER'],
+      permission: ['CUSTOMER_MANAGEMENT:RECYCLE'],
       action: (item: any) => {
         router.push({
-          name: CustomerRouteEnum.CUSTOMER_TRANSFER,
+          name: ClueRouteEnum.MOVE_TO_POOL,
           query: {
             id: item.id,
-            apiKey: FormDesignKeyEnum.CUSTOMER,
+            name: item.value,
+            reasonKey: ReasonTypeEnum.CUSTOMER_POOL_RS,
           },
         });
       },
